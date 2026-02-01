@@ -115,28 +115,61 @@ async def analyze_root_cause(request: AnalyzeRequest):
     if nlu_analyzer:
         nlu_result = nlu_analyzer.analyze_error_log(request.error_log)
     else:
-        # Fallback: Basic keyword extraction
+        # Fallback: Basic keyword extraction with code reference extraction
+        import re
         words = request.error_log.split()
         nlu_result = {
             "keywords": [{"text": word} for word in words[:10]],
             "error_patterns": [],
             "categories": [],
-            "entities": []
+            "entities": [],
+            "code_references": {
+                "files": [],
+                "classes": [],
+                "methods": [],
+                "search_terms": []
+            }
         }
         # Extract basic error patterns
         for pattern in ["Exception", "Error", "Failed", "Timeout", "500", "404"]:
             if pattern.lower() in request.error_log.lower():
                 nlu_result["error_patterns"].append(pattern)
 
+        # Fallback: Extract file names from error log
+        file_pattern = r'\b([\w\-]+\.(java|py|js|ts|tsx|go|rb|cpp|c|rs))\b'
+        for match in re.finditer(file_pattern, request.error_log):
+            file = match.group(1)
+            if file not in nlu_result["code_references"]["files"]:
+                nlu_result["code_references"]["files"].append(file)
+                nlu_result["code_references"]["search_terms"].append(file)
+
+        # Extract class.method patterns
+        class_method_pattern = r'\b([A-Z][a-zA-Z0-9]+)\.([a-z][a-zA-Z0-9]+)\b'
+        for match in re.finditer(class_method_pattern, request.error_log):
+            class_name = match.group(1)
+            method = match.group(2)
+            nlu_result["code_references"]["classes"].append(class_name)
+            nlu_result["code_references"]["methods"].append(method)
+            nlu_result["code_references"]["search_terms"].append(f"{class_name} {method}")
+
     # Step 2: Get code context from GitHub (if repo and PAT provided)
     code_context = ""
     if request.repo_url and request.github_pat and github_client:
         try:
-            error_patterns = nlu_result.get("error_patterns", [])
-            if error_patterns:
+            # Use specific code references for more targeted search
+            code_refs = nlu_result.get("code_references", {})
+            search_terms = code_refs.get("search_terms", [])
+
+            # Fallback to files, classes, or error patterns if no search terms
+            if not search_terms:
+                search_terms = code_refs.get("files", []) or code_refs.get("classes", [])
+            if not search_terms:
+                search_terms = nlu_result.get("error_patterns", [])
+
+            if search_terms:
                 code_context = await github_client.search_and_get_context(
                     request.repo_url,
-                    error_patterns,
+                    search_terms,
                     request.github_pat  # Pass user's PAT
                 )
         except Exception as e:

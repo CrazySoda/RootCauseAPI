@@ -10,7 +10,7 @@ info:
     name: DevPulse Team
 
 servers:
-  - url: https://your-code-engine-url.us-south.codeengine.appdomain.cloud
+  - url: https://application-12.25r01tgm40f2.us-east.codeengine.appdomain.cloud
     description: IBM Code Engine deployment
 
 paths:

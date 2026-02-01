@@ -51,11 +51,15 @@ class NLUAnalyzer:
                 )
             ).get_result()
 
+            # Extract code references (files, classes, methods)
+            code_refs = self.extract_code_references(log_text)
+
             return {
                 "entities": self._process_entities(response.get("entities", [])),
                 "keywords": self._process_keywords(response.get("keywords", [])),
                 "categories": response.get("categories", []),
                 "error_patterns": self._extract_error_patterns(log_text),
+                "code_references": code_refs,
                 "raw_analysis": response
             }
         except Exception as e:
@@ -100,3 +104,102 @@ class NLUAnalyzer:
                 patterns.append(indicator)
 
         return patterns
+
+    def extract_code_references(self, log_text: str) -> Dict[str, List[str]]:
+        """
+        Extract specific code references from error logs/stack traces.
+        Returns file names, class names, method names, and line numbers.
+        """
+        import re
+
+        references = {
+            "files": [],
+            "classes": [],
+            "methods": [],
+            "search_terms": []  # Combined terms for GitHub search
+        }
+
+        # Pattern for Java stack traces: at com.package.Class.method(File.java:123)
+        java_pattern = r'at\s+([\w\.]+)\.([\w]+)\(([\w]+\.java):(\d+)\)'
+        for match in re.finditer(java_pattern, log_text):
+            class_path = match.group(1)
+            method = match.group(2)
+            file = match.group(3)
+            line = match.group(4)
+
+            # Extract class name from full path
+            class_name = class_path.split('.')[-1]
+
+            if file not in references["files"]:
+                references["files"].append(file)
+            if class_name not in references["classes"]:
+                references["classes"].append(class_name)
+            if method not in references["methods"]:
+                references["methods"].append(method)
+
+            # Add specific search term
+            references["search_terms"].append(f"{class_name} {method}")
+
+        # Pattern for Python stack traces: File "path/to/file.py", line 123, in method_name
+        python_pattern = r'File\s+"([^"]+\.py)",\s+line\s+(\d+),\s+in\s+(\w+)'
+        for match in re.finditer(python_pattern, log_text):
+            file_path = match.group(1)
+            line = match.group(2)
+            method = match.group(3)
+
+            # Extract just filename
+            file = file_path.split('/')[-1].split('\\')[-1]
+
+            if file not in references["files"]:
+                references["files"].append(file)
+            if method not in references["methods"] and method != "<module>":
+                references["methods"].append(method)
+
+            references["search_terms"].append(f"{file} {method}")
+
+        # Pattern for JavaScript/Node stack traces: at methodName (path/file.js:123:45)
+        js_pattern = r'at\s+(\w+)?\s*\(?([^\s\)]+\.(js|ts|tsx)):(\d+):\d+\)?'
+        for match in re.finditer(js_pattern, log_text):
+            method = match.group(1) if match.group(1) else ""
+            file_path = match.group(2)
+
+            file = file_path.split('/')[-1].split('\\')[-1]
+
+            if file not in references["files"]:
+                references["files"].append(file)
+            if method and method not in references["methods"]:
+                references["methods"].append(method)
+
+            if method:
+                references["search_terms"].append(f"{file} {method}")
+            else:
+                references["search_terms"].append(file)
+
+        # Pattern for generic "ClassName.methodName" references
+        class_method_pattern = r'\b([A-Z][a-zA-Z0-9]+)\.([a-z][a-zA-Z0-9]+)\b'
+        for match in re.finditer(class_method_pattern, log_text):
+            class_name = match.group(1)
+            method = match.group(2)
+
+            if class_name not in references["classes"]:
+                references["classes"].append(class_name)
+            if method not in references["methods"]:
+                references["methods"].append(method)
+
+            references["search_terms"].append(f"{class_name} {method}")
+
+        # Pattern for file references: filename.ext:line
+        file_line_pattern = r'\b([\w\-]+\.(java|py|js|ts|tsx|go|rb|cpp|c|rs)):(\d+)\b'
+        for match in re.finditer(file_line_pattern, log_text):
+            file = match.group(1)
+            if file not in references["files"]:
+                references["files"].append(file)
+                references["search_terms"].append(file)
+
+        # Remove duplicates and limit
+        references["search_terms"] = list(dict.fromkeys(references["search_terms"]))[:10]
+        references["files"] = list(dict.fromkeys(references["files"]))[:10]
+        references["classes"] = list(dict.fromkeys(references["classes"]))[:10]
+        references["methods"] = list(dict.fromkeys(references["methods"]))[:10]
+
+        return references
