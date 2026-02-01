@@ -1,0 +1,9 @@
+fastapi==0.109.0
+uvicorn[standard]==0.27.0
+httpx==0.26.0
+pydantic==2.5.3
+python-dotenv==1.0.0
+ibm-watson==8.1.0
+ibm-cloud-sdk-core==3.20.0
+ibm-watsonx-ai==1.1.2
+ibmcloudant==0.8.1

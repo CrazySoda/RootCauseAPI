@@ -1,0 +1,342 @@
+openapi: 3.0.3
+info:
+  title: Root Cause Analysis API
+  description: |
+    AI-powered root cause analysis for application errors and incidents.
+    Uses IBM NLU for log parsing, watsonx.ai Granite for intelligent analysis,
+    and GitHub API for code context retrieval.
+  version: 1.0.0
+  contact:
+    name: DevPulse Team
+
+servers:
+  - url: https://your-code-engine-url.us-south.codeengine.appdomain.cloud
+    description: IBM Code Engine deployment
+
+paths:
+  /analyze:
+    post:
+      operationId: analyzeRootCause
+      summary: Analyze Root Cause
+      description: |
+        Performs comprehensive root cause analysis on an error or incident.
+        Combines IBM NLU log parsing, GitHub code search, and watsonx.ai
+        Granite model analysis to identify the root cause and suggest fixes.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AnalyzeRequest'
+            examples:
+              exception:
+                summary: Java Exception
+                value:
+                  error_message: "NullPointerException at UserService.java:42"
+                  stack_trace: "java.lang.NullPointerException\n\tat com.app.UserService.getUser(UserService.java:42)"
+                  incident_type: "exception"
+                  github_repo: "owner/repo"
+                  search_keywords: ["UserService", "getUser"]
+              timeout:
+                summary: Database Timeout
+                value:
+                  error_message: "Connection timeout after 30000ms"
+                  incident_type: "performance"
+      responses:
+        '200':
+          description: Analysis completed successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AnalysisResponse'
+        '500':
+          description: Analysis failed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /analyze-log-only:
+    post:
+      operationId: quickLogAnalysis
+      summary: Quick Log Analysis
+      description: |
+        Performs quick NLU-only analysis on error logs without AI reasoning.
+        Use this for initial triage to extract entities, keywords, and
+        error patterns from log text.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LogOnlyRequest'
+            examples:
+              error_log:
+                summary: Application Error Log
+                value:
+                  log_text: "[ERROR] 2024-01-15 10:23:45 - DatabaseConnectionError: Failed to connect to primary database. Timeout after 30s. Retrying with backup..."
+      responses:
+        '200':
+          description: Log analysis completed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LogAnalysisResponse'
+        '500':
+          description: Analysis failed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /incidents:
+    get:
+      operationId: listIncidents
+      summary: List Incidents
+      description: |
+        Retrieves a list of previously analyzed incidents.
+        Returns incident summaries including ID, type, timestamp, and severity.
+      parameters:
+        - name: limit
+          in: query
+          description: Maximum number of incidents to return
+          schema:
+            type: integer
+            default: 50
+            maximum: 100
+      responses:
+        '200':
+          description: List of incidents
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/IncidentList'
+
+  /incidents/{incident_id}:
+    get:
+      operationId: getIncident
+      summary: Get Incident Details
+      description: |
+        Retrieves detailed information about a specific incident
+        including full analysis results and suggested fixes.
+      parameters:
+        - name: incident_id
+          in: path
+          required: true
+          description: Unique incident identifier
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Incident details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/IncidentDetail'
+        '404':
+          description: Incident not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /health:
+    get:
+      operationId: healthCheck
+      summary: Health Check
+      description: |
+        Returns the health status of the API and its connected services
+        (NLU, watsonx.ai, GitHub).
+      responses:
+        '200':
+          description: Service health status
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HealthResponse'
+
+components:
+  schemas:
+    AnalyzeRequest:
+      type: object
+      required:
+        - error_message
+      properties:
+        error_message:
+          type: string
+          description: The error message or exception text to analyze
+        stack_trace:
+          type: string
+          description: Optional stack trace for deeper analysis
+        incident_type:
+          type: string
+          enum: [exception, performance, security, configuration, unknown]
+          default: unknown
+          description: Type of incident for targeted analysis
+        github_repo:
+          type: string
+          description: GitHub repository (owner/repo) to search for code context
+        search_keywords:
+          type: array
+          items:
+            type: string
+          description: Keywords to search for in the repository
+
+    LogOnlyRequest:
+      type: object
+      required:
+        - log_text
+      properties:
+        log_text:
+          type: string
+          description: Raw log text to analyze with NLU
+
+    AnalysisResponse:
+      type: object
+      properties:
+        incident_id:
+          type: string
+          description: Unique identifier for this incident
+        timestamp:
+          type: string
+          format: date-time
+        nlu_analysis:
+          type: object
+          description: IBM NLU extracted entities and keywords
+          properties:
+            entities:
+              type: array
+              items:
+                type: object
+            keywords:
+              type: array
+              items:
+                type: object
+            error_patterns:
+              type: array
+              items:
+                type: string
+        code_context:
+          type: object
+          description: Relevant code snippets from GitHub
+          properties:
+            files_found:
+              type: integer
+            snippets:
+              type: array
+              items:
+                type: object
+        root_cause_analysis:
+          type: object
+          description: AI-generated root cause analysis
+          properties:
+            analysis:
+              type: string
+              description: Detailed root cause explanation
+            severity:
+              type: string
+              enum: [low, medium, high, critical]
+            confidence:
+              type: number
+              format: float
+            suggested_fixes:
+              type: array
+              items:
+                type: string
+
+    LogAnalysisResponse:
+      type: object
+      properties:
+        entities:
+          type: array
+          items:
+            type: object
+            properties:
+              type:
+                type: string
+              text:
+                type: string
+              relevance:
+                type: number
+        keywords:
+          type: array
+          items:
+            type: object
+            properties:
+              text:
+                type: string
+              relevance:
+                type: number
+        categories:
+          type: array
+          items:
+            type: object
+        error_patterns:
+          type: array
+          items:
+            type: string
+          description: Detected error pattern indicators
+
+    IncidentList:
+      type: object
+      properties:
+        incidents:
+          type: array
+          items:
+            type: object
+            properties:
+              id:
+                type: string
+              incident_type:
+                type: string
+              timestamp:
+                type: string
+              severity:
+                type: string
+        total:
+          type: integer
+
+    IncidentDetail:
+      type: object
+      properties:
+        id:
+          type: string
+        incident_type:
+          type: string
+        timestamp:
+          type: string
+        error_message:
+          type: string
+        nlu_analysis:
+          type: object
+        code_context:
+          type: object
+        root_cause_analysis:
+          type: object
+
+    HealthResponse:
+      type: object
+      properties:
+        status:
+          type: string
+          enum: [healthy, degraded, unhealthy]
+        services:
+          type: object
+          properties:
+            nlu:
+              type: string
+            watsonx:
+              type: string
+            github:
+              type: string
+        timestamp:
+          type: string
+          format: date-time
+
+    ErrorResponse:
+      type: object
+      properties:
+        error:
+          type: string
+        detail:
+          type: string
