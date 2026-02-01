@@ -1,23 +1,24 @@
 """
 GitHub API integration for code search and retrieval.
 Uses GitHub REST API with PAT token - no local cloning required.
+Token is provided per-request by the user.
 """
 
-import os
 import httpx
 from typing import Dict, Any, List, Optional
 import base64
 
 
 class GitHubClient:
-    def __init__(self):
-        self.token = os.getenv("GITHUB_PAT")
-        if not self.token:
-            raise ValueError("GITHUB_PAT must be set")
+    """GitHub client that accepts token per-method call."""
 
+    def __init__(self):
         self.base_url = "https://api.github.com"
-        self.headers = {
-            "Authorization": f"Bearer {self.token}",
+
+    def _get_headers(self, token: str) -> dict:
+        """Generate headers with the provided token."""
+        return {
+            "Authorization": f"Bearer {token}",
             "Accept": "application/vnd.github.v3+json",
             "X-GitHub-Api-Version": "2022-11-28"
         }
@@ -32,11 +33,24 @@ class GitHubClient:
             return parts[0], parts[1]
         raise ValueError(f"Invalid GitHub URL: {repo_url}")
 
-    async def search_code(self, repo_url: str, pattern: str, max_results: int = 10) -> Dict[str, Any]:
+    async def search_code(
+        self,
+        repo_url: str,
+        pattern: str,
+        token: str,
+        max_results: int = 10
+    ) -> Dict[str, Any]:
         """
         Search for code patterns in a repository using GitHub Code Search API.
+
+        Args:
+            repo_url: GitHub repository URL
+            pattern: Search pattern
+            token: GitHub Personal Access Token
+            max_results: Maximum number of results to return
         """
         owner, repo = self._parse_repo_url(repo_url)
+        headers = self._get_headers(token)
 
         async with httpx.AsyncClient() as client:
             # GitHub code search query format
@@ -44,7 +58,7 @@ class GitHubClient:
 
             response = await client.get(
                 f"{self.base_url}/search/code",
-                headers=self.headers,
+                headers=headers,
                 params={"q": query, "per_page": max_results},
                 timeout=30.0
             )
@@ -72,16 +86,27 @@ class GitHubClient:
                     "message": response.text
                 }
 
-    async def get_file_content(self, repo_url: str, file_path: str) -> Optional[str]:
+    async def get_file_content(
+        self,
+        repo_url: str,
+        file_path: str,
+        token: str
+    ) -> Optional[str]:
         """
         Get raw content of a file from the repository.
+
+        Args:
+            repo_url: GitHub repository URL
+            file_path: Path to the file in the repository
+            token: GitHub Personal Access Token
         """
         owner, repo = self._parse_repo_url(repo_url)
+        headers = self._get_headers(token)
 
         async with httpx.AsyncClient() as client:
             response = await client.get(
                 f"{self.base_url}/repos/{owner}/{repo}/contents/{file_path}",
-                headers=self.headers,
+                headers=headers,
                 timeout=30.0
             )
 
@@ -93,16 +118,21 @@ class GitHubClient:
                     return base64.b64decode(content).decode("utf-8")
             return None
 
-    async def get_repo_info(self, repo_url: str) -> Dict[str, Any]:
+    async def get_repo_info(self, repo_url: str, token: str) -> Dict[str, Any]:
         """
         Get repository information.
+
+        Args:
+            repo_url: GitHub repository URL
+            token: GitHub Personal Access Token
         """
         owner, repo = self._parse_repo_url(repo_url)
+        headers = self._get_headers(token)
 
         async with httpx.AsyncClient() as client:
             response = await client.get(
                 f"{self.base_url}/repos/{owner}/{repo}",
-                headers=self.headers,
+                headers=headers,
                 timeout=30.0
             )
 
@@ -119,18 +149,29 @@ class GitHubClient:
             else:
                 return {"error": f"Failed to get repo info: {response.status_code}"}
 
-    async def get_file_tree(self, repo_url: str, path: str = "") -> List[Dict]:
+    async def get_file_tree(
+        self,
+        repo_url: str,
+        token: str,
+        path: str = ""
+    ) -> List[Dict]:
         """
         Get file tree of a repository or subdirectory.
+
+        Args:
+            repo_url: GitHub repository URL
+            token: GitHub Personal Access Token
+            path: Path within the repository (default: root)
         """
         owner, repo = self._parse_repo_url(repo_url)
+        headers = self._get_headers(token)
 
         async with httpx.AsyncClient() as client:
             url = f"{self.base_url}/repos/{owner}/{repo}/contents/{path}" if path else f"{self.base_url}/repos/{owner}/{repo}/contents"
 
             response = await client.get(
                 url,
-                headers=self.headers,
+                headers=headers,
                 timeout=30.0
             )
 
@@ -148,21 +189,31 @@ class GitHubClient:
                     ]
             return []
 
-    async def search_and_get_context(self, repo_url: str, error_patterns: List[str]) -> str:
+    async def search_and_get_context(
+        self,
+        repo_url: str,
+        error_patterns: List[str],
+        token: str
+    ) -> str:
         """
         Search for error patterns and return code context.
         Combines search and file content retrieval.
+
+        Args:
+            repo_url: GitHub repository URL
+            error_patterns: List of patterns to search for
+            token: GitHub Personal Access Token
         """
         context_parts = []
 
         for pattern in error_patterns[:3]:  # Limit to top 3 patterns
-            search_result = await self.search_code(repo_url, pattern, max_results=3)
+            search_result = await self.search_code(repo_url, pattern, token, max_results=3)
 
             if "results" in search_result:
                 for result in search_result["results"][:2]:  # Top 2 files per pattern
                     file_path = result.get("path")
                     if file_path:
-                        content = await self.get_file_content(repo_url, file_path)
+                        content = await self.get_file_content(repo_url, file_path, token)
                         if content:
                             # Truncate content for context
                             truncated = content[:1500] if len(content) > 1500 else content

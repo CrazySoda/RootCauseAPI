@@ -58,11 +58,9 @@ async def startup():
     except Exception as e:
         print(f"Warning: Watsonx not available: {e}")
 
-    try:
-        github_client = GitHubClient()
-        print("GitHub Client initialized")
-    except Exception as e:
-        print(f"Warning: GitHub not available: {e}")
+    # GitHub client doesn't require env vars - accepts token per-request
+    github_client = GitHubClient()
+    print("GitHub Client initialized (accepts PAT per-request)")
 
     try:
         cloudant_client = get_cloudant_client()
@@ -79,6 +77,7 @@ async def startup():
 class AnalyzeRequest(BaseModel):
     error_log: str
     repo_url: Optional[str] = None
+    github_pat: Optional[str] = None  # User provides their GitHub PAT
     incident_type: str = "unknown"
 
 
@@ -129,15 +128,16 @@ async def analyze_root_cause(request: AnalyzeRequest):
             if pattern.lower() in request.error_log.lower():
                 nlu_result["error_patterns"].append(pattern)
 
-    # Step 2: Get code context from GitHub (if repo provided)
+    # Step 2: Get code context from GitHub (if repo and PAT provided)
     code_context = ""
-    if request.repo_url and github_client:
+    if request.repo_url and request.github_pat and github_client:
         try:
             error_patterns = nlu_result.get("error_patterns", [])
             if error_patterns:
                 code_context = await github_client.search_and_get_context(
                     request.repo_url,
-                    error_patterns
+                    error_patterns,
+                    request.github_pat  # Pass user's PAT
                 )
         except Exception as e:
             print(f"GitHub search failed: {e}")
@@ -296,7 +296,7 @@ async def health():
         "services": {
             "nlu": "active" if nlu_analyzer else "inactive",
             "watsonx": "active" if watsonx_client else "inactive",
-            "github": "active" if github_client else "inactive",
+            "github": "available" if github_client else "inactive",  # Accepts PAT per-request
             "cloudant": cloudant_status
         }
     }

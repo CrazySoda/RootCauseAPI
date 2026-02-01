@@ -32,15 +32,14 @@ paths:
               exception:
                 summary: Java Exception
                 value:
-                  error_message: "NullPointerException at UserService.java:42"
-                  stack_trace: "java.lang.NullPointerException\n\tat com.app.UserService.getUser(UserService.java:42)"
+                  error_log: "NullPointerException at UserService.java:42\njava.lang.NullPointerException\n\tat com.app.UserService.getUser(UserService.java:42)"
+                  repo_url: "https://github.com/owner/repo"
+                  github_pat: "ghp_xxxxxxxxxxxx"
                   incident_type: "exception"
-                  github_repo: "owner/repo"
-                  search_keywords: ["UserService", "getUser"]
               timeout:
                 summary: Database Timeout
                 value:
-                  error_message: "Connection timeout after 30000ms"
+                  error_log: "Connection timeout after 30000ms"
                   incident_type: "performance"
       responses:
         '200':
@@ -160,27 +159,22 @@ components:
     AnalyzeRequest:
       type: object
       required:
-        - error_message
+        - error_log
       properties:
-        error_message:
+        error_log:
           type: string
-          description: The error message or exception text to analyze
-        stack_trace:
+          description: The error message, exception text, or log to analyze
+        repo_url:
           type: string
-          description: Optional stack trace for deeper analysis
+          description: GitHub repository URL (e.g., https://github.com/owner/repo)
+        github_pat:
+          type: string
+          description: GitHub Personal Access Token for code search (user-provided)
         incident_type:
           type: string
           enum: [exception, performance, security, configuration, unknown]
           default: unknown
           description: Type of incident for targeted analysis
-        github_repo:
-          type: string
-          description: GitHub repository (owner/repo) to search for code context
-        search_keywords:
-          type: array
-          items:
-            type: string
-          description: Keywords to search for in the repository
 
     LogOnlyRequest:
       type: object
